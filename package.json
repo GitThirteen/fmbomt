@@ -1,0 +1,17 @@
+{
+  "name": "FMBOMT",
+  "type": "module",
+  "devDependencies": {
+    "@types/d3": "^7.4.3",
+    "typescript": "^7.0.2",
+    "vite": "^8.3.4"
+  },
+  "scripts": {
+    "dev": "vite",
+    "build": "tsc && vite build",
+    "preview": "vite preview"
+  },
+  "dependencies": {
+    "d3": "^7.9.0"
+  }
+}
