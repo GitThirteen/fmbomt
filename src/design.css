@@ -1,0 +1,61 @@
+@import url('https://fonts.googleapis.com/css2?family=Rampart+One&family=Slackey&display=swap');
+
+:root {
+    --color-thristle: #D1BCE3;
+    --color-lilac: #C49BBB;
+    --color-taupe: #A1867F;
+    --color-grape: #585481;
+    --color-cobalt: #19297C;
+    --color-coffee: #130303;
+}
+
+.thirstle { color: var(--color-thristle); }
+.lilac { color: var(--color-lilac); }
+.taupe { color: var(--color-taupe); }
+.grape { color: var(--color-grape); }
+.cobalt { color: var(--color-cobalt); }
+.coffee { color: var(--color-coffee); }
+
+@font-face {
+  font-family: 'Computer Modern Sans';
+  src: url('./assets/fonts/cmunss.otf') format('opentype');
+  font-weight: normal;
+  font-style: normal;
+}
+
+@font-face {
+  font-family: 'Computer Modern Sans';
+  src: url('./assets/fonts/cmunsi.otf') format('opentype');
+  font-weight: normal;
+  font-style: italic;
+}
+
+body {
+    height: 100vh;
+    margin: 0;
+    font-family: 'Computer Modern Sans', sans-serif;
+}
+
+#core {
+    display: flex;
+    flex-direction: column;
+    width: 1320px;
+    margin-inline: auto;
+}
+
+#title {
+    font-family: 'Slackey', sans-serif;
+    font-size: 48px;
+    display: flex;
+    justify-content: center;
+    align-items: center;
+    margin: 1rem 0;
+    font-weight: 600;
+    gap: 10px;
+}
+
+.title-segment { transform:rotate(5deg); }
+.title-segment:nth-child(2n) { transform:rotate(-4deg); }
+.title-segment:nth-child(3n) { transform:rotate(2deg); }
+.title-segment:nth-child(4n) { transform:rotate(-5deg); }
+.title-segment:nth-child(5n) { transform:rotate(-6deg); }

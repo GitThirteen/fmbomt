@@ -21,7 +21,7 @@ svg.append("g")
     .attr("transform", `translate(${config.margins.left},0)`)
     .call(d3.axisLeft(y));
 
-const container = document.getElementById('container');
+const container = document.getElementById('visualizer');
 const svgNode = svg.node();
 
 if (container && svgNode) {
