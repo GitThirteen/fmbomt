@@ -1,7 +1,4 @@
-@import url('https://fonts.googleapis.com/css2?family=Rampart+One&family=Slackey&display=swap');
-
 /* LaTeX font */
-
 @font-face {
   font-family: 'Computer Modern Sans';
   src: url('../assets/fonts/cmunss.otf') format('opentype');
@@ -43,4 +40,13 @@
   src: url('../assets/fonts/MapleMono-BoldItalic.ttf') format('truetype');
   font-weight: bold;
   font-style: italic;
+}
+
+/* Display font */
+@font-face {
+  font-family: 'Slackey';
+  src: url('../assets/fonts/Slackey-Regular.ttf') format('truetype');
+  font-weight: normal;
+  font-style: normal;
+  font-display: swap;
 }
