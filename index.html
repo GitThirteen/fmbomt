@@ -4,36 +4,480 @@
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
     <meta name="description" content="Utility web-tool for visualizing and experimenting with the fitting of 1D and 2D distributions to samples." />
+    <meta http-equiv="Content-Security-Policy" content="
+        default-src 'self';
+        script-src 'self' 'wasm-unsafe-eval' https://cdn.jsdelivr.net/pyodide/;
+        worker-src 'self' blob:;
+        connect-src 'self' https://cdn.jsdelivr.net/pyodide/;
+        style-src 'self' 'unsafe-inline';
+        font-src 'self';
+        img-src 'self' data:;
+        object-src 'none';
+        base-uri 'none';
+        form-action 'none';
+    ">
 
     <title>Fit Me Baby One More Time!</title>
 
-    <link rel="stylesheet" href="src/design.css">
+    <link rel="stylesheet" href="src/styles/fonts.css">
+    <link rel="stylesheet" href="src/styles/design.css">
 </head>
 
 <body>
     <main>
-        <div id="title">
-            <span class="thirstle title-segment">Fit</span>
-            <span class="lilac title-segment">Me</span>
-            <span class="taupe title-segment">Baby</span>
-            <span class="grape title-segment">One</span>
-            <span class="cobalt title-segment">More</span>
-            <span class="coffee title-segment">Time</span>
-        </div>
+        <section id="title">
+            <span class="red unselectable title-segment" data-notes="C4+G4">Fit</span>
+            <span class="black unselectable title-segment" data-notes="C4+G#4">Me</span>
+            <span class="red unselectable title-segment" data-notes="C4+G4,C4+G#4">Baby</span>
+            <span class="black unselectable title-segment" data-notes="G3+G4">One</span>
+            <span class="red unselectable title-segment" data-notes="G#3+G#4">More</span>
+            <span class="black unselectable title-segment" data-notes="G3+G4">Time!</span>
+        </section>
 
-        <div id="core">
-            <div id="configurator">
-                <!-- TODO -->
-            </div>
-            <div id="visualizer">
-                <!-- Visualization --> 
-            </div>
-        </div>
+        <section id="description">
+            <h3>About</h3>
+            <p>
+                A recurring problem across scientific and technical domains is turning a sample of observations into an 
+                underlying probability distribution. Irrespective of whether you are modelling the energy spectrum of a 
+                particle decay, the arrival times of photons on a detector, the returns of a financial instrument, or the 
+                scattering lobes used in path guiding and BxDF material representations, you ultimately always arrive
+                at the same question:<br><em>How does the distribution that generated these samples look like?</em>
+            </p>
+            <p>
+                The answer is rarely obvious. Real data are noisy, skewed, multimodal, and/or censored, and the model you
+                choose shapes every conclusion drawn from it. A generic default such as a plain Gaussian is easy to
+                justify, but often a very simplified, if not poor description of the data at hand. Hence we are so interested 
+                in developing a model that can accomplish at least one property (of course, ideally more than just one) better 
+                than what the current state of the art offers, whether that is stability, expressiveness, speed, or something 
+                entirely different.
+            </p>
+            <p>
+                <strong>FMBOMT (Fit Me Baby One More Time)</strong> is a small utility for the exploration of such properties. 
+                It lets you visually compose a target distribution, draw samples from it, and fit a range of models to those samples, 
+                comparing how well each recovers the ground truth you planted. Additionally, you may implement your own distribution to use 
+                for fitting the data. Additional features include live-updating model parameters, switching between one and two-dimensional 
+                representations, as well as defining the space you want to operate in. Once finished, export publication-ready figures under CC0. 
+                Please let me know via the link down below if you encounter any issues throughout the use, and most importantly, have fun!
+            </p>
+        </section>
 
-        <div id="code">
-            <!-- TODO -->
-        </div>
+        <section id="core">
+            <div class="cfg-panel cfg-panel--top">
+                <div class="cfg-panel cfg-panel--general">
+                    <div class="cfg-group__header">
+                        <h4 class="cfg-group__heading">General</h4>
+                        <p class="cfg-group__hint">Applies to every fit and to the visualization as a whole.</p>
+                    </div>
+                    <div class="cfg-general">
+                        <label class="cfg-field">
+                            <span class="cfg-field__label">Samples</span>
+                            <input class="cfg-number" id="sample-count" type="number" value="500" min="1" max="100000" step="1" />
+                        </label>
+                        <label class="cfg-field">
+                            <span class="cfg-field__label">Seed</span>
+                            <input class="cfg-number" id="sample-seed" type="number" value="42" min="0" step="1" />
+                        </label>
+                        <label class="cfg-field">
+                            <span class="cfg-field__label">Compare on</span>
+                            <select class="cfg-select" id="compare-on">
+                                <option value="density" selected>Density curve</option>
+                                <option value="cdf">CDF</option>
+                            </select>
+                        </label>
+                        <label class="cfg-field">
+                            <span class="cfg-field__label">Error metric</span>
+                            <select class="cfg-select" id="error-metric">
+                                <option value="mse" selected>MSE</option>
+                                <option value="rmse">RMSE</option>
+                                <option value="mae">MAE</option>
+                                <option value="mad">MAD (mean absolute deviation)</option>
+                                <option value="ks">Kolmogorov–Smirnov</option>
+                                <option value="cramer-von-mises">Cramér–von Mises</option>
+                                <option value="anderson-darling">Anderson–Darling</option>
+                                <option value="wasserstein">Wasserstein (1st order)</option>
+                                <option value="kl">Kullback–Leibler divergence</option>
+                            </select>
+                        </label>
+
+                        <label class="cfg-field">
+                            <span class="cfg-field__label">Domain</span>
+                            <select class="cfg-select" id="domain-mode">
+                                <option value="unit-interval" selected>Unit interval ([0, 1])</option>
+                                <option value="positive-unit-interval">Positive unit interval ((0, 1])</option>
+                                <option value="circle">Circle (S¹, angles in [−π, π))</option>
+                                <option value="sphere">Sphere (S², unit vectors)</option>
+                                <option value="real">Real line (ℝ)</option>
+                                <option value="positive">Positive half-line (ℝ≥0)</option>
+                                <option value="custom">Custom interval ([a, b])</option>
+                            </select>
+                        </label>
+
+                        <div class="cfg-domain__bounds">
+                            <label class="cfg-field">
+                                <span class="cfg-field__label">Min</span>
+                                <input class="cfg-number" id="domain-min" type="number" placeholder="−∞" disabled />
+                            </label>
+                            <label class="cfg-field">
+                                <span class="cfg-field__label">Max</span>
+                                <input class="cfg-number" id="domain-max" type="number" placeholder="+∞" disabled />
+                            </label>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- Right column: editor above the fitting model. -->
+                <div class="cfg-panel cfg-panel--compose">
+                <div class="cfg-group cfg-group--editor">
+                    <div class="cfg-group__header">
+                        <h4 class="cfg-group__heading">Editor</h4>
+                        <p class="cfg-group__hint">Choose the distribution family, then shape it directly in the visualization.</p>
+                    </div>
+                    <label class="cfg-field">
+                        <span class="cfg-field__label">Distribution</span>
+                        <select class="cfg-select" id="target-dist">
+                            <option value="gaussian" selected>Gaussian</option>
+                            <option value="uniform">Uniform</option>
+                            <option value="exponential">Exponential</option>
+                            <option value="beta">Beta</option>
+                            <option value="cauchy">Cauchy</option>
+                            <option value="vonmises" data-requires-space="circle">Von Mises (circular)</option>
+                        </select>
+                    </label>
+                    <p class="cfg-group__note">Click the canvas to plant a component, then use the parameter shortcuts to shape it. Changing the distribution type clears any drawn components.</p>
+
+                    <!-- TODO: Live parameters of the user's Python model, built from METADATA / PARAMETERS. -->
+                    <div id="dynamic-params" class="dyn-ui"></div>
+                </div>
+
+                <div class="cfg-group cfg-group--model">
+                    <div class="cfg-group__header">
+                        <h4 class="cfg-group__heading">Fitting model</h4>
+                        <p class="cfg-group__hint">Choose the model used to fit the samples.</p>
+                    </div>
+                    <div class="cfg-split">
+                        <div class="cfg-split__col">
+                            <label class="cfg-field">
+                                <span class="cfg-field__label">Model</span>
+                                <select class="cfg-select" id="fit-model">
+                                    <option value="gmm" selected>Gaussian Mixture Model</option>
+                                    <option value="kde">Kernel Density Estimate</option>
+                                    <option value="metalog">Metalog</option>
+                                    <option value="vonmises">von Mises Mixture Model</option>
+                                    <option value="dtree">D-Tree (Müller et al.)</option>
+                                    <option value="custom">Custom (write your own)</option>
+                                </select>
+                            </label>
+                            <div class="cfg-params is-hidden" data-model-params="custom">
+                                <p class="cfg-group__note">Write your own model in the code window on the left.</p>
+                            </div>
+                        </div>
+                        <div class="cfg-split__col">
+                            <div class="cfg-params" data-model-params="gmm">
+                                <label class="cfg-field">
+                                    <span class="cfg-field__label">Components</span>
+                                    <input class="cfg-number" type="number" value="3" min="1" step="1" />
+                                </label>
+                                <label class="cfg-field">
+                                    <span class="cfg-field__label">Covariance type</span>
+                                    <select class="cfg-select">
+                                        <option value="full" selected>Full</option>
+                                        <option value="tied">Tied</option>
+                                        <option value="diag">Diagonal</option>
+                                        <option value="spherical">Spherical</option>
+                                    </select>
+                                </label>
+                                <label class="cfg-field">
+                                    <span class="cfg-field__label">Estimation</span>
+                                    <select class="cfg-select">
+                                        <option value="em" selected>EM (expectation–maximization)</option>
+                                        <option value="gmm-vi">Variational inference</option>
+                                        <option value="gmm-gd">Gradient descent (minibatch)</option>
+                                        <option value="gmm-moments">Method of moments</option>
+                                    </select>
+                                </label>
+                                <label class="cfg-field">
+                                    <span class="cfg-field__label">Init</span>
+                                    <select class="cfg-select">
+                                        <option value="kmeans++" selected>k-means++</option>
+                                        <option value="kmeans">k-means</option>
+                                        <option value="random">Random samples</option>
+                                        <option value="quantiles">Quantiles</option>
+                                    </select>
+                                </label>
+                                <label class="cfg-field">
+                                    <span class="cfg-field__label">Max iterations</span>
+                                    <input class="cfg-number" type="number" value="100" min="1" step="1" />
+                                </label>
+                            </div>
+
+                            <div class="cfg-params is-hidden" data-model-params="vonmises">
+                                <label class="cfg-field">
+                                    <span class="cfg-field__label">Components</span>
+                                    <input class="cfg-number" type="number" value="3" min="1" step="1" />
+                                </label>
+                                <label class="cfg-field">
+                                    <span class="cfg-field__label">Concentration type</span>
+                                    <select class="cfg-select">
+                                        <option value="per-component" selected>Per component</option>
+                                        <option value="shared">Shared</option>
+                                    </select>
+                                </label>
+                                <label class="cfg-field">
+                                    <span class="cfg-field__label">Estimation</span>
+                                    <select class="cfg-select">
+                                        <option value="em" selected>EM (expectation–maximization)</option>
+                                        <option value="vm-vi">Variational inference</option>
+                                        <option value="vm-gd">Gradient descent (minibatch)</option>
+                                        <option value="vm-moments">Method of moments</option>
+                                    </select>
+                                </label>
+                                <label class="cfg-field">
+                                    <span class="cfg-field__label">Init</span>
+                                    <select class="cfg-select">
+                                        <option value="kmeans++" selected>k-means++</option>
+                                        <option value="kmeans">k-means</option>
+                                        <option value="random">Random samples</option>
+                                        <option value="quantiles">Quantiles</option>
+                                    </select>
+                                </label>
+                                <label class="cfg-field">
+                                    <span class="cfg-field__label">Max iterations</span>
+                                    <input class="cfg-number" type="number" value="100" min="1" step="1" />
+                                </label>
+                            </div>
+
+                            <div class="cfg-params is-hidden" data-model-params="vmf">
+                                <label class="cfg-field">
+                                    <span class="cfg-field__label">Components</span>
+                                    <input class="cfg-number" type="number" value="3" min="1" step="1" />
+                                </label>
+                                <label class="cfg-field">
+                                    <span class="cfg-field__label">Concentration type</span>
+                                    <select class="cfg-select">
+                                        <option value="per-component" selected>Per component</option>
+                                        <option value="shared">Shared</option>
+                                    </select>
+                                </label>
+                                <label class="cfg-field">
+                                    <span class="cfg-field__label">Estimation</span>
+                                    <select class="cfg-select">
+                                        <option value="em" selected>EM (expectation–maximization)</option>
+                                        <option value="vmf-vi">Variational inference</option>
+                                        <option value="vmf-gd">Gradient descent (minibatch)</option>
+                                        <option value="vmf-moments">Method of moments</option>
+                                    </select>
+                                </label>
+                                <label class="cfg-field">
+                                    <span class="cfg-field__label">Init</span>
+                                    <select class="cfg-select">
+                                        <option value="kmeans++" selected>k-means++</option>
+                                        <option value="kmeans">k-means</option>
+                                        <option value="random">Random samples</option>
+                                        <option value="quantiles">Quantiles</option>
+                                    </select>
+                                </label>
+                                <label class="cfg-field">
+                                    <span class="cfg-field__label">Max iterations</span>
+                                    <input class="cfg-number" type="number" value="100" min="1" step="1" />
+                                </label>
+                            </div>
+
+                            <div class="cfg-params is-hidden" data-model-params="dtree">
+                                <label class="cfg-field">
+                                    <span class="cfg-field__label">Sampling fraction loss</span>
+                                    <select class="cfg-select">
+                                        <option value="none" selected>None</option>
+                                        <option value="kl">Kullback–Leibler divergence</option>
+                                        <option value="variance">Variance</option>
+                                    </select>
+                                </label>
+                                <label class="cfg-field">
+                                    <span class="cfg-field__label">Directional filter</span>
+                                    <select class="cfg-select">
+                                        <option value="nearest" selected>Nearest</option>
+                                        <option value="box">Box</option>
+                                    </select>
+                                </label>
+                                <label class="cfg-field">
+                                    <span class="cfg-field__label">Split threshold</span>
+                                    <input class="cfg-number" type="number" value="0.01" min="0" step="0.001" />
+                                </label>
+                                <label class="cfg-field">
+                                    <span class="cfg-field__label">Max. depth</span>
+                                    <input class="cfg-number" type="number" value="20" min="1" step="1" />
+                                </label>
+                            </div>
+
+                            <div class="cfg-params is-hidden" data-model-params="metalog">
+                                <label class="cfg-field">
+                                    <span class="cfg-field__label">Boundedness</span>
+                                    <select class="cfg-select">
+                                        <option value="bounded" selected>Bounded</option>
+                                        <option value="semi-bounded">Semi-bounded</option>
+                                        <option value="unbounded">Unbounded</option>
+                                    </select>
+                                </label>
+                                <label class="cfg-field">
+                                    <span class="cfg-field__label">Terms</span>
+                                    <input class="cfg-number" type="number" value="4" min="2" step="1" />
+                                </label>
+                                <label class="cfg-field">
+                                    <span class="cfg-field__label">Estimation</span>
+                                    <select class="cfg-select">
+                                        <option value="quantile-regression" selected>Quantile regression (linear program)</option>
+                                        <option value="metalog-mle">Maximum likelihood</option>
+                                        <option value="metalog-moments">Method of moments</option>
+                                    </select>
+                                </label>
+                            </div>
+
+                            <div class="cfg-params is-hidden" data-model-params="kde">
+                                <label class="cfg-field">
+                                    <span class="cfg-field__label">Bandwidth</span>
+                                    <select class="cfg-select">
+                                        <option value="scott" selected>Scott's rule</option>
+                                        <option value="silverman">Silverman's rule</option>
+                                        <option value="manual">Manual</option>
+                                    </select>
+                                </label>
+                                <label class="cfg-field">
+                                    <span class="cfg-field__label">Kernel</span>
+                                    <select class="cfg-select">
+                                        <option value="gaussian" selected>Gaussian</option>
+                                        <option value="epanechnikov">Epanechnikov</option>
+                                        <option value="tophat">Top-hat</option>
+                                    </select>
+                                </label>
+                                <label class="cfg-field">
+                                    <span class="cfg-field__label">Estimation</span>
+                                    <select class="cfg-select">
+                                        <option value="closed-form" selected>Closed form (no optimisation)</option>
+                                        <option value="kde-mle">Maximum likelihood (bandwidth)</option>
+                                        <option value="kde-cv">Cross-validation (bandwidth)</option>
+                                    </select>
+                                </label>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+                </div>
+            </div>
+
+            <div class="cfg-panel cfg-panel--workspace">
+                <div class="code-window">
+                    <div class="code-window__bar">
+                        <span class="code-window__title">fit.py</span>
+                        <span class="code-window__status" id="code-status"></span>
+                        <button class="code-window__run" id="code-run" type="button" title="Run" aria-label="Run">
+                            <span class="icon" data-icon="play" data-icon-size="14"></span>
+                        </button>
+                    </div>
+                    <div class="code-window__body" id="code-editor"></div>
+                    <div class="code-window__output" id="code-output" hidden>
+                        <div class="code-window__output-label">Output</div>
+                        <pre class="code-window__output-pre" id="code-output-pre"></pre>
+                    </div>
+                    <div class="code-window__resize code-window__resize--height" data-resize="height" role="separator" aria-orientation="horizontal" aria-label="Resize code window height" title="Drag to resize"></div>
+                    <div class="code-window__resize code-window__resize--width" data-resize="width" role="separator" aria-orientation="vertical" aria-label="Resize code window width" title="Drag to resize"></div>
+                </div>
+
+                <div class="visualizer-stack">
+                    <div id="visualizer">
+                        <div class="dim-toggle" role="tablist" aria-label="Dimensionality">
+                            <button class="dim-toggle__btn is-active" data-dim="1d" role="tab" aria-selected="true">1D</button>
+                            <button class="dim-toggle__btn" data-dim="2d" role="tab" aria-selected="false">2D</button>
+                        </div>
+                        <div class="visualizer__toolbar">
+                            <div class="tool-wheel" id="tool-wheel">
+                                <button class="icon-button tool-wheel__toggle" id="tool-wheel-btn" type="button"
+                                        title="Drawing tools" aria-label="Drawing tools" aria-haspopup="true" aria-expanded="false">
+                                    <span class="icon" data-icon="tools" data-icon-size="20"></span>
+                                </button>
+                                <div class="tool-wheel__menu" id="tool-wheel-menu" role="menu" aria-label="Drawing tools">
+                                    <button class="tool-wheel__item is-active" data-tool="select" role="menuitemradio" aria-checked="true" title="Select (S)">
+                                        <span class="icon" data-icon="select" data-icon-size="18"></span>
+                                        <span class="tool-wheel__label">Select</span><kbd>S</kbd>
+                                    </button>
+                                    <button class="tool-wheel__item" data-tool="add" role="menuitemradio" aria-checked="false" title="Add (A)">
+                                        <span class="icon" data-icon="add" data-icon-size="18"></span>
+                                        <span class="tool-wheel__label">Add</span><kbd>A</kbd>
+                                    </button>
+                                    <button class="tool-wheel__item" data-tool="delete" role="menuitemradio" aria-checked="false" title="Erase (D)">
+                                        <span class="icon" data-icon="delete" data-icon-size="18"></span>
+                                        <span class="tool-wheel__label">Delete</span><kbd>D</kbd>
+                                    </button>
+                                    <button class="tool-wheel__item" data-tool="reset" role="menuitemradio" aria-checked="false" title="Reset (R)">
+                                        <span class="icon" data-icon="reset" data-icon-size="18"></span>
+                                        <span class="tool-wheel__label">Reset</span><kbd>R</kbd>
+                                    </button>
+                                </div>
+                            </div>
+                            <button class="icon-button" id="refit-btn" type="button" title="Refit" aria-label="Refit">
+                                <span class="icon" data-icon="refit" data-icon-size="20"></span>
+                            </button>
+                            <button class="icon-button" id="export-btn" type="button" title="Download (CC0)" aria-label="Download">
+                                <span class="icon" data-icon="download" data-icon-size="20"></span>
+                            </button>
+                        </div>
+                    </div>
+
+                    <div class="visualizer-settings">
+                        <div class="cfg-toggles">
+                            <label class="cfg-field cfg-field--toggle">
+                                <input type="checkbox" checked />
+                                <span class="cfg-field__label" data-display="fitted">Show fitted curve</span>
+                            </label>
+                            <label class="cfg-field cfg-field--toggle">
+                                <input type="checkbox" checked />
+                                <span class="cfg-field__label" data-display="samples">Show samples</span>
+                            </label>
+                            <label class="cfg-field cfg-field--toggle">
+                                <input type="checkbox" />
+                                <span class="cfg-field__label" data-display="residuals">Show residuals</span>
+                            </label>
+                            <label class="cfg-field cfg-field--toggle">
+                                <input type="checkbox" />
+                                <span class="cfg-field__label" data-display="error">Show error metric</span>
+                            </label>
+                            <label class="cfg-field cfg-field--toggle">
+                                <input type="checkbox" checked />
+                                <span class="cfg-field__label" data-display="grid">Show grid</span>
+                            </label>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </section>
+
+        <footer id="footer" data-curve-clear>
+            <div class="footer__content">
+                <div class="footer__left">
+                    <p class="footer__copy">© 2026 Michael Eickmeyer</p>
+                    <p class="footer__sub">All exports are released under CC0 — public domain, no attribution required.</p>
+                </div>
+
+                <nav class="footer__nav" aria-label="External and project links">
+                    <a href="https://ko-fi.com/akaxiii" target="_blank" rel="noopener noreferrer" title="KoFi">One More Dime?</a>
+                    <a href="https://gitthirteen.github.io" target="_blank" rel="noopener noreferrer" title="Homepage">Homepage</a>
+                    <a href="https://github.com/gitthirteen/fmbomt" target="_blank" rel="noopener noreferrer" title="GitHub Repo">Source</a>
+                    <a href="#title" class="footer__top">Back to top ↑</a>
+                </nav>
+            </div>
+        </footer>
     </main>
+
+    <div class="confirm-backdrop" id="confirm-backdrop" hidden>
+        <div class="confirm-dialog" role="alertdialog" aria-modal="true" aria-labelledby="confirm-title" aria-describedby="confirm-body">
+            <h3 class="confirm-dialog__title" id="confirm-title">Reset distribution?</h3>
+            <p class="confirm-dialog__body" id="confirm-body">
+                This removes every component you have drawn. This action cannot be undone.
+            </p>
+            <div class="confirm-dialog__actions">
+                <button class="confirm-dialog__btn" id="confirm-no" type="button">No</button>
+                <button class="confirm-dialog__btn confirm-dialog__btn--danger" id="confirm-yes" type="button">Yes</button>
+            </div>
+        </div>
+    </div>
 
     <script type="module" src="/src/main.ts"></script>
 </body>

@@ -1,0 +1,46 @@
+@import url('https://fonts.googleapis.com/css2?family=Rampart+One&family=Slackey&display=swap');
+
+/* LaTeX font */
+
+@font-face {
+  font-family: 'Computer Modern Sans';
+  src: url('../assets/fonts/cmunss.otf') format('opentype');
+  font-weight: normal;
+  font-style: normal;
+}
+
+@font-face {
+  font-family: 'Computer Modern Sans';
+  src: url('../assets/fonts/cmunsi.otf') format('opentype');
+  font-weight: normal;
+  font-style: italic;
+}
+
+/* Maple Mono */
+@font-face {
+  font-family: 'Maple Mono';
+  src: url('../assets/fonts/MapleMono-Regular.ttf') format('truetype');
+  font-weight: normal;
+  font-style: normal;
+}
+
+@font-face {
+  font-family: 'Maple Mono';
+  src: url('../assets/fonts/MapleMono-Bold.ttf') format('truetype');
+  font-weight: bold;
+  font-style: normal;
+}
+
+@font-face {
+  font-family: 'Maple Mono';
+  src: url('../assets/fonts/MapleMono-Italic.ttf') format('truetype');
+  font-weight: normal;
+  font-style: italic;
+}
+
+@font-face {
+  font-family: 'Maple Mono';
+  src: url('../assets/fonts/MapleMono-BoldItalic.ttf') format('truetype');
+  font-weight: bold;
+  font-style: italic;
+}
