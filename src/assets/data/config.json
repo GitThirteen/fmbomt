@@ -1,0 +1,12 @@
+{
+    "dimensions": {
+        "width": 640,
+        "height": 400
+    },
+    "margins": {
+        "top": 30,
+        "right": 20,
+        "bottom": 30,
+        "left": 20
+    }
+}
