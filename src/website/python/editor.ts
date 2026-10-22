@@ -266,13 +266,11 @@ function clampSize(value: number, min: number, max: number): number {
 }
 
 function initResizeHandles(): void {
-    const workspace = document.querySelector<HTMLElement>('.cfg-panel--workspace');
     const codeWindow = document.querySelector<HTMLElement>('.code-window');
     const body = document.getElementById('code-editor');
-    if (!workspace || !codeWindow || !body) return;
+    if (!codeWindow || !body) return;
 
     const minHeight = 8 * EDITOR_LINE_HEIGHT * EDITOR_FONT_SIZE;
-    const minWidth = 280;
 
     const bindDrag = (
         handle: HTMLElement,
@@ -319,24 +317,6 @@ function initResizeHandles(): void {
         );
     }
 
-    const widthHandle = codeWindow.querySelector<HTMLElement>('[data-resize="width"]');
-    if (widthHandle) {
-        const maxWidth = () => Math.max(minWidth, workspace.getBoundingClientRect().width - 320);
-        let startX = 0;
-        let startWidth = 0;
-
-        bindDrag(
-            widthHandle,
-            (event) => {
-                startX = event.clientX;
-                startWidth = codeWindow.getBoundingClientRect().width;
-            },
-            (event) => {
-                const next = startWidth + (event.clientX - startX);
-                workspace.style.setProperty('--code-window-width', `${clampSize(next, minWidth, maxWidth())}px`);
-            },
-        );
-    }
 }
 
 /* ---------------------------------------------------------------------------

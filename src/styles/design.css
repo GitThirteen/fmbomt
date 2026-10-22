@@ -8,7 +8,6 @@
     --color-black: #111111;
     --color-white: #FFFFFF;
     --color-paper: #FBFBFB;
-
     --curve-height: 90px;
 }
 
@@ -39,7 +38,7 @@ main {
 
 #title,
 #description,
-#core,
+#content,
 #footer {
     position: relative;
     isolation: isolate;
@@ -69,7 +68,7 @@ main {
     margin-bottom: 0;
 }
 
-#core {
+#content {
     --block-color: var(--color-white);
     color: var(--color-black);
     display: flex;
@@ -80,44 +79,41 @@ main {
     padding: var(--curve-height) 2rem;
 }
 
-/* ===========================================================================
- * Core panel
- * ========================================================================= */
+/* ==========
+ * Core Panel
+ * ========== */
 
-.cfg-panel {
-    border: 1px solid rgba(17, 17, 17, 0.10);
-    border-radius: 10px;
-    background: #FFFFFF;
-    box-shadow: 0 2px 8px rgba(17, 17, 17, 0.05);
-}
-
-.cfg-panel--top {
+.core {
     display: grid;
     grid-template-columns: minmax(0, 320px) minmax(0, 1fr);
-    gap: 1.25rem;
     align-items: stretch;
-    border: none;
-    background: none;
-    box-shadow: none;
+    gap: 1.25rem;
 }
 
-.cfg-panel--general {
+.config {
+    display: flex;
+    flex-direction: column;
+    gap: 1.25rem;
+    min-width: 0;
+}
+
+.panel {
     display: flex;
     flex-direction: column;
     padding: 1rem 1.25rem 1.1rem;
+    background: #FFFFFF;
+    border: 1px solid rgba(17, 17, 17, 0.10);
+    border-radius: 10px;
+    box-shadow: 0 2px 8px rgba(17, 17, 17, 0.05);
+}
+
+.crit {
     background: rgba(215, 38, 61, 0.035);
     border-color: rgba(215, 38, 61, 0.18);
 }
 
-.cfg-panel--general .cfg-group__hint {
+.panel-hint {
     margin-bottom: 0.75rem;
-}
-
-.cfg-panel--general .cfg-general {
-    display: grid;
-    grid-template-columns: minmax(0, 1fr);
-    gap: 0.6rem 1rem;
-    align-items: start;
 }
 
 .cfg-domain__bounds {
@@ -128,11 +124,11 @@ main {
     border-top: 1px solid rgba(215, 38, 61, 0.18);
 }
 
-.cfg-select option:disabled {
+.setting-select option:disabled {
     color: rgba(17, 17, 17, 0.35);
 }
 
-.cfg-number:disabled {
+.setting-number:disabled {
     background: rgba(17, 17, 17, 0.035);
     color: rgba(17, 17, 17, 0.55);
     cursor: not-allowed;
@@ -164,35 +160,49 @@ main {
     flex: 1 1 auto;
 }
 
-.cfg-group--model .cfg-split {
-    display: block;
+.panel-header .panel-hint {
+    margin-bottom: 0;
 }
 
-.cfg-group--model .cfg-split__col + .cfg-split__col {
-    margin-top: 0.9rem;
-    padding-top: 0.9rem;
-    padding-left: 0;
-    border-top: 1px solid rgba(17, 17, 17, 0.10);
-    border-left: none;
-}
-
-.cfg-group--model .cfg-split__col + .cfg-split__col .cfg-params:not(.is-hidden) {
+.cfg-model-row {
     display: grid;
-    grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
-    gap: 0.6rem 1.25rem;
+    grid-template-columns: minmax(12rem, 1.4fr) repeat(5, minmax(0, 1fr));
     align-items: start;
+    gap: 0.6rem 1rem;
 }
 
-.cfg-group__header {
+.cfg-model-row .setting {
+    min-width: 0;
+    width: auto;
+    margin: 0;
+}
+
+.cfg-model-row > .cfg-params:not(.is-hidden) {
+    display: contents;
+}
+
+.cfg-model-row > [data-model-params='custom']:not(.is-hidden) {
+    display: flex;
+    grid-column: 2 / -1;
+    align-items: center;
+}
+
+.cfg-model-row > [data-model-params='custom'] .panel-note {
+    margin: 0;
+}
+
+@media (max-width: 900px) {
+    .cfg-model-row {
+        grid-template-columns: repeat(auto-fit, minmax(min(100%, 10rem), 1fr));
+    }
+}
+
+.panel-header {
     margin-bottom: 0.75rem;
 }
 
-.cfg-group__header .cfg-group__heading {
-    margin-bottom: 0.15rem;
-}
-
-.cfg-group__header .cfg-group__hint {
-    margin-bottom: 0;
+.panel-heading {
+    margin: 0 0 0.15rem;
 }
 
 .cfg-split {
@@ -211,11 +221,10 @@ main {
 }
 
 .cfg-panel--workspace {
-    --code-window-width: 560px;
-    display: grid;
-    grid-template-columns: minmax(0, var(--code-window-width)) minmax(0, 1fr);
-    gap: 1.25rem;
-    padding: 1rem 1.25rem;
+    min-width: 0;
+    margin-top: 1rem;
+    padding-top: 1rem;
+    border-top: 1px solid rgba(17, 17, 17, 0.10);
 }
 
 /* ===========================================================================
@@ -227,7 +236,7 @@ main {
     display: flex;
     flex-direction: column;
     gap: 0.75rem;
-        min-height: 42rem;
+    min-height: 0;
 }
 
 .visualizer-settings {
@@ -239,11 +248,11 @@ main {
     position: relative;
     flex: 1 1 auto;
     min-width: 0;
-        min-height: 26rem;
+    min-height: 0;
     display: flex;
     align-items: stretch;
     justify-content: center;
-        padding: 3.5rem 1rem 0.5rem;
+    padding: 3.5rem 1rem 0.5rem;
 }
 
 #visualizer .visualizer-chart {
@@ -473,13 +482,18 @@ main {
     min-width: 0;
 }
 
-.cfg-general {
-    display: grid;
-    grid-template-columns: 1fr 1fr;
-    gap: 0 1rem;
+.panel-wrapper {
+    display: flex;
+    flex-direction: column;
+    width: 100%;
+    gap: 0.6rem;
 }
 
-.cfg-toggles {
+.panel-wrapper > .setting {
+    margin-bottom: 0;
+}
+
+.toggles {
     margin-top: 0.9rem;
     padding-top: 0.75rem;
     border-top: 1px solid rgba(17, 17, 17, 0.08);
@@ -488,10 +502,9 @@ main {
     gap: 0.55rem;
 }
 
-.visualizer-settings .cfg-toggles {
+.visualizer-settings .toggles {
     display: flex;
     flex-direction: row;
-    flex-wrap: wrap;
     justify-content: center;
     align-items: center;
     margin-top: 0;
@@ -500,17 +513,12 @@ main {
     gap: 0.5rem 1.5rem;
 }
 
-.visualizer-settings .cfg-field--toggle {
+.visualizer-settings .setting-toggle {
     display: inline-flex;
     align-items: center;
     justify-content: center;
     gap: 0.4rem;
-        margin-bottom: 0;
-}
-
-.cfg-group {
-    padding: 0.9rem 0 1.1rem;
-    border-bottom: 1px solid rgba(17, 17, 17, 0.08);
+    margin-bottom: 0;
 }
 
 .cfg-group:last-child {
@@ -532,14 +540,14 @@ main {
     color: var(--color-black);
 }
 
-.cfg-group__hint {
+.panel-hint {
     margin: 0 0 0.75rem;
     font-size: 12px;
     color: rgba(17, 17, 17, 0.55);
     line-height: 1.4;
 }
 
-.cfg-group__note {
+.panel-note {
     margin: 0.5rem 0 0;
     font-size: 11px;
     font-style: italic;
@@ -585,24 +593,25 @@ main {
     opacity: 0.75;
 }
 
-.cfg-field {
+.setting {
     display: block;
     margin-bottom: 0.7rem;
+    width: 100%;
 }
 
-.cfg-field:last-child {
+.setting:last-child {
     margin-bottom: 0;
 }
 
-.cfg-field__label {
+.setting-label {
     display: block;
     font-size: 12px;
     color: rgba(17, 17, 17, 0.65);
     margin-bottom: 0.3rem;
 }
 
-.cfg-select,
-.cfg-number {
+.setting-select,
+.setting-number {
     width: 100%;
     box-sizing: border-box;
     padding: 0.45rem 0.6rem;
@@ -614,8 +623,8 @@ main {
     font-size: 13px;
 }
 
-.cfg-select:focus,
-.cfg-number:focus {
+.setting-select:focus,
+.setting-number:focus {
     outline: none;
     border-color: var(--color-red);
     box-shadow: 0 0 0 2px rgba(215, 38, 61, 0.15);
@@ -626,7 +635,7 @@ main {
     pointer-events: none;
 }
 
-.cfg-field--toggle {
+.setting-toggle {
     display: flex;
     flex-direction: row-reverse;
     align-items: center;
@@ -635,14 +644,14 @@ main {
     cursor: pointer;
 }
 
-.cfg-field--toggle input[type='checkbox'] {
+.setting-toggle input[type='checkbox'] {
     width: 16px;
     height: 16px;
     accent-color: var(--color-red);
     cursor: pointer;
 }
 
-.cfg-field--toggle .cfg-field__label {
+.setting-toggle .cfg-field__label {
     margin-bottom: 0;
 }
 
@@ -743,6 +752,8 @@ main {
 
 .code-window {
     position: relative;
+    width: 100%;
+    min-height: 0;
     margin: 0;
     border: 1px solid rgba(17, 17, 17, 0.15);
     border-radius: 10px;
@@ -814,7 +825,7 @@ main {
 
 .code-window__body {
     overflow: hidden;
-        height: var(--code-editor-height, calc(26 * 1.6 * 12px));
+    height: var(--code-editor-height, calc(26 * 1.6 * 12px));
 }
 
 .code-window__body .cm-editor {
@@ -840,14 +851,6 @@ main {
     bottom: 0;
     height: 8px;
     cursor: ns-resize;
-}
-
-.code-window__resize--width {
-    top: 0;
-    right: 0;
-    bottom: 0;
-    width: 8px;
-    cursor: ew-resize;
 }
 
 .code-window__resize::after {
@@ -906,7 +909,7 @@ main {
 
 #title::before,
 #description::before,
-#core::before,
+#content::before,
 #footer::before {
     content: '';
     position: absolute;

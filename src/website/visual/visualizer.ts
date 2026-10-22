@@ -25,6 +25,7 @@ import {
     paramsFor,
     resetGroundTruth,
     select,
+    setTwoDimensional,
 } from '../model/groundtruth';
 
 /* ---------------------------------------------------------------------------
@@ -228,13 +229,56 @@ function locationPatch(c: Component, at: number): Partial<Component> {
     }
 }
 
+/**
+ * The fields that move a component to `(atX, atY)` in 2D.
+ *
+ * The 2D families are separable, so the x location is written exactly as in 1D
+ * and the y location follows the same rule with the `*Y` parameters.
+ */
+function locationPatch2D(c: Component, atX: number, atY: number): Partial<Component> {
+    const patch: Partial<Component> = {};
+    switch (c.family) {
+        case 'cauchy':
+            patch.location = atX;
+            break;
+        case 'uniform': {
+            const half = Math.abs(c.upper - c.lower) / 2 || 0.05;
+            patch.lower = atX - half;
+            patch.upper = atX + half;
+            break;
+        }
+        case 'exponential':
+            // Anchored at the origin; the cursor only scales it.
+            break;
+        case 'beta': {
+            const bounds = domainRange();
+            const width = Math.max(1e-6, bounds.max - bounds.min);
+            const mode = Math.max(0.05, Math.min(0.95, (atX - bounds.min) / width));
+            const concentration = 14;
+            patch.alpha = Math.max(1, mode * concentration);
+            patch.beta = Math.max(1, (1 - mode) * concentration);
+            break;
+        }
+        default:
+            patch.mean = atX;
+            patch.meanY = atY;
+            break;
+    }
+    // The y anchor is always tracked so the 2D handle follows the cursor even
+    // for families whose x location is implicit.
+    if (patch.meanY === undefined) patch.meanY = atY;
+    return patch;
+}
+
 /** Parameters measured in domain units, whose steps scale with the domain. */
-const UNIT_SCALED = new Set<ParamKey>(['mean', 'sigma', 'lower', 'upper', 'location', 'scale']);
+const UNIT_SCALED = new Set<ParamKey>(['mean', 'meanY', 'sigma', 'sigmaY', 'lower', 'upper', 'location', 'scale']);
 
 /** Per-parameter nudge steps, mirroring the store's. */
 const PARAM_STEP: Record<ParamKey, number> = {
     mean: 0.02,
+    meanY: 0.02,
     sigma: 0.01,
+    sigmaY: 0.01,
     weight: 0.05,
     lower: 0.02,
     upper: 0.02,
@@ -247,11 +291,11 @@ const PARAM_STEP: Record<ParamKey, number> = {
 };
 
 /** Parameters that place a component along the domain's x-axis. */
-const PREVIEW_LOCATION_PARAMS = new Set<ParamKey>(['mean', 'lower', 'upper', 'location']);
+const PREVIEW_LOCATION_PARAMS = new Set<ParamKey>(['mean', 'meanY', 'lower', 'upper', 'location']);
 
 /** Clamp a preview parameter to its valid range, mirroring the store. */
 function clampPreviewParam(param: ParamKey, value: number, range: { min: number; max: number }): number {
-    if (param === 'sigma' || param === 'scale') return Math.max(1e-3, value);
+    if (param === 'sigma' || param === 'sigmaY' || param === 'scale') return Math.max(1e-3, value);
     if (param === 'weight' || param === 'rate') return Math.max(1e-3, value);
     if (param === 'alpha' || param === 'beta') return Math.max(1e-2, value);
     if (param === 'kappa') return Math.max(0, value);
@@ -1603,15 +1647,32 @@ function render2D(root: d3.Selection<SVGSVGElement, unknown, null, undefined>, w
                 addLine([[t, -half, 0], [t, half, 0]]);
             }
 
+            // The drawn mixture is the surface; the placeholder only fills in
+            // while nothing has been drawn yet.
+            const drawn = hasComponents();
+            const bounds = domainRange();
+            const toWorld = (u: number, v: number): [number, number] => [
+                bounds.min + u * (bounds.max - bounds.min),
+                bounds.min + v * (bounds.max - bounds.min),
+            ];
+            const heightAt = (u: number, v: number): number => {
+                if (!drawn) return squareDensity(u, v) * 0.75;
+                const [dx, dy] = toWorld(u, v);
+                return groundTruthPdf(dx, dy) * 0.75;
+            };
             quads = surfaceQuads(
                 q(56),
                 q(56),
                 (u, v) => {
                     const x = -half + 2 * half * u;
                     const y = -half + 2 * half * v;
-                    return [x, y, squareDensity(u, v) * 0.75];
+                    return [x, y, heightAt(u, v)];
                 },
-                squareDensity,
+                (u, v) => {
+                    if (!drawn) return squareDensity(u, v);
+                    const [dx, dy] = toWorld(u, v);
+                    return groundTruthPdf(dx, dy) / 1.2;
+                },
                 (p) => p[2],
             );
 
@@ -1635,15 +1696,29 @@ function render2D(root: d3.Selection<SVGSVGElement, unknown, null, undefined>, w
                 addLine([[t, -half, 0], [t, half, 0]], false, stroke);
             }
 
+            const drawn = hasComponents();
+            const bounds = domainRange();
+            const toWorld = (u: number, v: number): [number, number] => [
+                bounds.min + u * (bounds.max - bounds.min),
+                bounds.min + v * (bounds.max - bounds.min),
+            ];
             quads = surfaceQuads(
                 q(48),
                 q(48),
                 (u, v) => {
                     const x = -half + 2 * half * u;
                     const y = -half + 2 * half * v;
-                    return [x, y, fitPdf(x) * fitPdf(y) * 6];
+                    const h = drawn
+                        ? groundTruthPdf(toWorld(u, v)[0], toWorld(u, v)[1]) * 6
+                        : fitPdf(x) * fitPdf(y) * 6;
+                    return [x, y, h];
                 },
-                (u, v) => (fitPdf(-half + 2 * half * u) * fitPdf(-half + 2 * half * v) * 6) / 0.6,
+                (u, v) => {
+                    const h = drawn
+                        ? groundTruthPdf(toWorld(u, v)[0], toWorld(u, v)[1]) * 6
+                        : fitPdf(-half + 2 * half * u) * fitPdf(-half + 2 * half * v) * 6;
+                    return h / 0.6;
+                },
                 (p) => p[2],
             );
         } else if (isCircle) {
@@ -1805,12 +1880,287 @@ function render2D(root: d3.Selection<SVGSVGElement, unknown, null, undefined>, w
         return build(quality);
     };
 
+    // ---- Drawing in 2D ---------------------------------------------------
+    // The same tools as 1D, acting on the domain's base. The cursor is mapped
+    // back onto the base plane (or the hemisphere/sphere) by inverting the
+    // projection, so a click lands where the user sees it.
+    //
+    // The capture rect sits above the scene and receives the pointer events,
+    // so the arcball gesture must be started from here rather than on the root
+    // (a drag handler on the root would swallow clicks meant for the tools).
+    const baseHit = (event: PointerEvent): { x: number; y: number } | null => {
+        const [px, py] = d3.pointer(event, root.node());
+        const b = basis();
+        const s = baseScale * zoom;
+        // Screen offset from the projection centre, in world units along the
+        // camera's right/up axes.
+        const wx = (px - cx) / s;
+        const wy = -(py - cy) / s;
+
+        if (isSphere) {
+            // The visible hemisphere: the point on the sphere that projects
+            // here is `wx * right + wy * up + depth * fwd`.
+            const r2 = wx * wx + wy * wy;
+            if (r2 > 1) return null;
+            const depth = Math.sqrt(Math.max(0, 1 - r2));
+            const world: Vec3 = [
+                wx * b.right[0] + wy * b.up[0] + depth * b.fwd[0],
+                wx * b.right[1] + wy * b.up[1] + depth * b.fwd[1],
+                wx * b.right[2] + wy * b.up[2] + depth * b.fwd[2],
+            ];
+            // Spherical coordinates: theta around z, phi from the pole.
+            return { x: Math.atan2(world[1], world[0]), y: Math.acos(Math.max(-1, Math.min(1, world[2]))) };
+        }
+
+        if (isCircle) {
+            // The disc is the z = 0 plane; solve for the point on it that
+            // projects here: `wx * right + wy * up + t * fwd` with z = 0.
+            const denom = b.fwd[2];
+            if (Math.abs(denom) < 1e-6) return null;
+            const t = -(wx * b.right[2] + wy * b.up[2]) / denom;
+            const world: Vec3 = [
+                wx * b.right[0] + wy * b.up[0] + t * b.fwd[0],
+                wx * b.right[1] + wy * b.up[1] + t * b.fwd[1],
+                0,
+            ];
+            const r = Math.hypot(world[0], world[1]);
+            return r <= 1 ? { x: world[0], y: world[1] } : null;
+        }
+
+        // Planar bases: intersect the view ray with z = 0 in the same world
+        // units as the grid.
+        const denom = b.fwd[2];
+        if (Math.abs(denom) < 1e-6) return null;
+        const t = -(wx * b.right[2] + wy * b.up[2]) / denom;
+        const worldX = wx * b.right[0] + wy * b.up[0] + t * b.fwd[0];
+        const worldY = wx * b.right[1] + wy * b.up[1] + t * b.fwd[1];
+        const half = isInterval ? 0.9 : 1.25;
+        if (Math.abs(worldX) > half || Math.abs(worldY) > half) return null;
+        return { x: worldX, y: worldY };
+    };
+
+    /** The domain value of a base point along x (and y in 2D). */
+    const domainFromBase = (p: { x: number; y: number }): { x: number; y: number } => {
+        if (isCircle) {
+            return { x: Math.atan2(p.y, p.x), y: Math.hypot(p.x, p.y) };
+        }
+        if (isSphere) return p;
+        // Planar bases are drawn in a normalized square spanning [-half, half],
+        // while the domain may be any interval, so the base coordinates are
+        // rescaled into the domain's bounds.
+        const half = isInterval ? 0.9 : 1.25;
+        const bounds = domainRange();
+        return {
+            x: bounds.min + ((p.x + half) / (2 * half)) * (bounds.max - bounds.min),
+            y: bounds.min + ((p.y + half) / (2 * half)) * (bounds.max - bounds.min),
+        };
+    };
+
+    /** The inverse of `domainFromBase`: a domain point in base coordinates. */
+    const baseFromDomain = (x: number, y: number): { x: number; y: number } => {
+        if (isCircle) return { x: Math.cos(x) * y, y: Math.sin(x) * y };
+        if (isSphere) return { x, y };
+        const half = isInterval ? 0.9 : 1.25;
+        const bounds = domainRange();
+        const width = Math.max(1e-9, bounds.max - bounds.min);
+        return {
+            x: -half + ((x - bounds.min) / width) * (2 * half),
+            y: -half + ((y - bounds.min) / width) * (2 * half),
+        };
+    };
+
+    const hitTest2D = (p: { x: number; y: number }): number | null => {
+        const tolerance = HIT_RADIUS_PX / (baseScale * zoom);
+        const target = domainFromBase(p);
+        let best: number | null = null;
+        let bestDistance = Infinity;
+        for (const c of getComponents()) {
+            // The y anchor is `meanY` for every family: `locationOf` only
+            // resolves the x coordinate.
+            const d = Math.hypot(locationOf(c) - target.x, c.meanY - target.y);
+            if (d < bestDistance) {
+                bestDistance = d;
+                best = c.id;
+            }
+        }
+        // The tolerance is expressed in base units, so compare it against a
+        // distance measured in the same space.
+        const scale = (2 * (isInterval ? 0.9 : 1.25)) / Math.max(1e-9, domainRange().max - domainRange().min);
+        return best !== null && bestDistance * scale <= tolerance ? best : null;
+    };
+
+    // Markers for the drawn components: a dot at each lobe's anchor, filled
+    // when selected, so the user can see what a click will pick.
+    const markerLayer = root.append('g').attr('class', 'vis-2d-markers').attr('pointer-events', 'none');
+    const drawMarkers = () => {
+        markerLayer.selectAll('*').remove();
+        const P = projector();
+        const selected = getSelectedId();
+        for (const c of getComponents()) {
+            const gx = locationOf(c);
+            const gy = c.meanY;
+            const base = baseFromDomain(gx, gy);
+            const at = isSphere
+                ? [Math.sin(gy) * Math.cos(gx), Math.sin(gy) * Math.sin(gx), Math.cos(gy)]
+                : [base.x, base.y, 0];
+            const s = P(at as Vec3);
+            const isSelected = c.id === selected;
+            markerLayer
+                .append('circle')
+                .attr('cx', s.x)
+                .attr('cy', s.y)
+                .attr('r', isSelected ? 6 : 4.5)
+                .attr('fill', isSelected ? COLOR.red : '#FFFFFF')
+                .attr('stroke', isSelected ? COLOR.red : COLOR.ink)
+                .attr('stroke-width', 1.6);
+        }
+    };
+
+    let penGhost: Component | null = null;
+    const ghostLayer = root.append('g').attr('class', 'vis-2d-ghost').attr('pointer-events', 'none');
+
+    const drawGhost = () => {
+        ghostLayer.selectAll('*').remove();
+        if (!penGhost) return;
+        const P = projector();
+        // A small marker plus its footprint, so the pending lobe is visible
+        // before it is committed.
+        const gx = locationOf(penGhost);
+        const gy = penGhost.meanY;
+        const base = baseFromDomain(gx, gy);
+        const at = isSphere ? [Math.sin(gy) * Math.cos(gx), Math.sin(gy) * Math.sin(gx), Math.cos(gy)] : [base.x, base.y, 0];
+        const s = P(at as Vec3);
+        ghostLayer
+            .append('circle')
+            .attr('cx', s.x)
+            .attr('cy', s.y)
+            .attr('r', 7)
+            .attr('fill', 'none')
+            .attr('stroke', COLOR.red)
+            .attr('stroke-width', 1.6)
+            .attr('stroke-dasharray', '3 3');
+        ghostLayer
+            .append('circle')
+            .attr('cx', s.x)
+            .attr('cy', s.y)
+            .attr('r', 2.5)
+            .attr('fill', COLOR.red);
+    };
+
+    const capture = root
+        .append('rect')
+        .attr('class', 'vis-truth-capture')
+        .attr('width', width)
+        .attr('height', height)
+        .attr('fill', 'transparent')
+        .attr('cursor', toolCursor(currentTool));
+
+    capture
+        .on('pointermove', (event: PointerEvent) => {
+            if (currentTool !== 'add') {
+                if (penGhost) {
+                    penGhost = null;
+                    drawGhost();
+                }
+                return;
+            }
+            const base = baseHit(event);
+            if (!base) return;
+            const d = domainFromBase(base);
+            penGhost = { ...(penGhost ?? makeGhost(getCurrentFamily(), d.x, d.y)), ...locationPatch2D(penGhost ?? makeGhost(getCurrentFamily(), d.x, d.y), d.x, d.y) };
+            drawGhost();
+        })
+        .on('pointerleave', () => {
+            penGhost = null;
+            drawGhost();
+        })
+        .on('click', (event: PointerEvent) => {
+            const editing = isParamModifier(event) && getSelectedId() !== null;
+            if (editing) return;
+            const base = baseHit(event);
+            if (currentTool === 'add') {
+                if (!base) return;
+                const d = domainFromBase(base);
+                const ghost = penGhost ?? makeGhost(getCurrentFamily(), d.x, d.y);
+                const id = addComponent(d.x, ghost.family, d.y);
+                applyComponent(id, { ...ghost, ...locationPatch2D(ghost, d.x, d.y) });
+                penGhost = null;
+                drawGhost();
+                return;
+            }
+            if (!base) {
+                if (currentTool === 'select') select(null);
+                return;
+            }
+            const hit = hitTest2D(base);
+            if (currentTool === 'delete') {
+                if (hit !== null) deleteComponent(hit);
+            } else {
+                select(hit);
+            }
+        });
+
+    // Dragging a selected component's marker moves it across the base.
+    let dragId: number | null = null;
+    let dragOrigin: { px: number; py: number; x: number; y: number } | null = null;
+
+    const onDragMove = (event: PointerEvent) => {
+        if (dragId === null || !dragOrigin) return;
+        // Re-use the same inverse projection as a click, so the lobe tracks the
+        // cursor exactly wherever the camera is looking from.
+        const base = baseHit(event);
+        if (!base) return;
+        const d = domainFromBase(base);
+        moveComponent(dragId, d.x, d.y);
+        // Redraw in place: a full render would destroy the gesture.
+        frame = rebuild(PREVIEW_QUALITY);
+        update(frame, false);
+    };
+
+    const onDragUp = () => {
+        if (dragId === null) return;
+        dragId = null;
+        dragOrigin = null;
+        draggingHandle = false;
+        window.removeEventListener('pointermove', onDragMove);
+        window.removeEventListener('pointerup', onDragUp);
+        render();
+    };
+
+    capture.on('pointerdown', (event: PointerEvent) => {
+        if (currentTool !== 'select') return;
+        const base = baseHit(event);
+        if (!base) return;
+        const hit = hitTest2D(base);
+        if (hit === null) return;
+        event.preventDefault();
+        event.stopPropagation();
+        select(hit);
+        const component = getComponents().find((c) => c.id === hit);
+        if (!component) return;
+        draggingHandle = true;
+        dragId = hit;
+        dragOrigin = { px: event.clientX, py: event.clientY, x: locationOf(component), y: component.meanY };
+        window.addEventListener('pointermove', onDragMove);
+        window.addEventListener('pointerup', onDragUp);
+    });
+
+    chartSubscriptions.push(() => {
+        window.removeEventListener('pointermove', onDragMove);
+        window.removeEventListener('pointerup', onDragUp);
+    });
+
+    drawMarkers();
+
     // ---- Arcball interaction ----
+    // The camera gesture starts on the capture rect, which sits above the
+    // scene. Attaching it to `root` would let it swallow the clicks that the
+    // drawing tools need; the rect forwards a drag to the same handlers.
     root.style('cursor', 'grab');
     let dragging = false;
     let zoomTimer = 0;
     const drag = d3
-        .drag<SVGSVGElement, unknown>()
+        .drag<SVGRectElement, unknown>()
         .on('start', function () {
             d3.select(this).style('cursor', 'grabbing');
             dragging = true;
@@ -1845,7 +2195,7 @@ function render2D(root: d3.Selection<SVGSVGElement, unknown, null, undefined>, w
             dragging = false;
             frame = rebuild(1);
         });
-    root.call(drag);
+    capture.call(drag);
 
     root.on('wheel.arcball', (event: WheelEvent) => {
         event.preventDefault();
@@ -2133,19 +2483,19 @@ function handleParamShortcut(event: KeyboardEvent): boolean {
  * Entry point
  * ------------------------------------------------------------------------- */
 
+function chartSize(element: HTMLElement): { width: number; height: number } {
+    const style = getComputedStyle(element);
+    return {
+        width: Math.max(200, element.clientWidth - parseFloat(style.paddingLeft) - parseFloat(style.paddingRight)),
+        height: Math.max(200, element.clientHeight - parseFloat(style.paddingTop) - parseFloat(style.paddingBottom)),
+    };
+}
+
 function render(): void {
     if (!container) return;
     // The container's padding reserves room for the floating toggle/toolbar, so
     // its content box is exactly the space available to the chart.
-    const style = getComputedStyle(container);
-    const width = Math.max(
-        200,
-        container.clientWidth - parseFloat(style.paddingLeft) - parseFloat(style.paddingRight),
-    );
-    const height = Math.max(
-        200,
-        container.clientHeight - parseFloat(style.paddingTop) - parseFloat(style.paddingBottom),
-    );
+    const { width, height } = chartSize(container);
 
     // Only remove the chart we own — not the toolbar icons inside the container.
     disposeChart();
@@ -2172,15 +2522,16 @@ export function initVisualizer(): void {
     if (!container) return;
 
     render();
-    lastWidth = Math.round(container.getBoundingClientRect().width);
-    lastHeight = Math.round(container.getBoundingClientRect().height);
+    const size = chartSize(container);
+    lastWidth = size.width;
+    lastHeight = size.height;
 
     resizeObserver?.disconnect();
     resizeObserver = new ResizeObserver((entries) => {
         const entry = entries[0];
         if (!entry) return;
-        const width = Math.round(entry.contentRect.width);
-        const height = Math.round(entry.contentRect.height);
+        const width = Math.max(200, Math.round(entry.contentRect.width));
+        const height = Math.max(200, Math.round(entry.contentRect.height));
         if (width === lastWidth && height === lastHeight) return;
         lastWidth = width;
         lastHeight = height;
@@ -2190,6 +2541,9 @@ export function initVisualizer(): void {
 
     onDimensionChange((dim) => {
         currentDim = dim;
+        // The store needs to know which parameter set is in play, so the
+        // shortcuts and the parameter list follow the dimension.
+        setTwoDimensional(dim === '2d');
         render();
     });
     onDomainChange(() => render());

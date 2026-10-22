@@ -18,7 +18,9 @@ export type Family = 'gaussian' | 'uniform' | 'exponential' | 'beta' | 'cauchy' 
 /** Every parameter a component can carry, across all families. */
 export type ParamKey =
     | 'mean'
+    | 'meanY'
     | 'sigma'
+    | 'sigmaY'
     | 'weight'
     | 'lower'
     | 'upper'
@@ -35,13 +37,18 @@ export type ParamKey =
  * All parameter fields are present on every component so the store can be
  * updated uniformly; only the ones listed in `FAMILY_PARAMS[family]` are
  * relevant for a given family.
+ *
+ * The `*Y` fields only matter in 2D: a component is then a product of its 1D
+ * shape along x and along y, so the same family table describes both modes.
  */
 export interface Component {
     id: number;
     family: Family;
     weight: number;
     mean: number;
+    meanY: number;
     sigma: number;
+    sigmaY: number;
     lower: number;
     upper: number;
     rate: number;
@@ -52,9 +59,26 @@ export interface Component {
     kappa: number;
 }
 
-/** The parameters each family exposes, in cycle order. */
+/** The parameters each family exposes in 1D, in cycle order. */
 const FAMILY_PARAMS: Record<Family, readonly ParamKey[]> = {
     gaussian: ['mean', 'sigma', 'weight'],
+    uniform: ['lower', 'upper', 'weight'],
+    exponential: ['rate', 'weight'],
+    beta: ['alpha', 'beta', 'weight'],
+    cauchy: ['location', 'scale', 'weight'],
+    vonmises: ['mean', 'kappa', 'weight'],
+};
+
+/**
+ * The parameters each family exposes in 2D.
+ *
+ * A 2D component is separable, so the x parameters are followed by their y
+ * counterparts. Families whose support does not depend on a location (Beta,
+ * Exponential) keep a single shape, because their 2D analogue is the product
+ * of two identical shapes over the unit square / quadrant.
+ */
+const FAMILY_PARAMS_2D: Record<Family, readonly ParamKey[]> = {
+    gaussian: ['mean', 'meanY', 'sigma', 'sigmaY', 'weight'],
     uniform: ['lower', 'upper', 'weight'],
     exponential: ['rate', 'weight'],
     beta: ['alpha', 'beta', 'weight'],
@@ -65,7 +89,9 @@ const FAMILY_PARAMS: Record<Family, readonly ParamKey[]> = {
 /** Display names for the parameters, used in the on-plot parameter list. */
 export const PARAM_LABELS: Record<ParamKey, string> = {
     mean: 'μ',
+    meanY: 'ν',
     sigma: 'σ',
+    sigmaY: 'τ',
     weight: 'w',
     lower: 'a',
     upper: 'b',
@@ -96,6 +122,8 @@ let selectedId: number | null = null;
 let activeParam: ParamKey = 'mean';
 let nextId = 1;
 let currentFamily: Family = 'gaussian';
+/** Whether components are drawn as 2D shapes (product of two 1D shapes). */
+let twoDimensional = false;
 
 const listeners = new Set<() => void>();
 
@@ -137,12 +165,40 @@ export function getCurrentFamily(): Family {
 
 /** The parameters the given family exposes, in cycle order. */
 export function paramsFor(family: Family): ParamKey[] {
-    return [...FAMILY_PARAMS[family]];
+    return [...(twoDimensional ? FAMILY_PARAMS_2D : FAMILY_PARAMS)[family]];
+}
+
+/** Whether the store is currently drawing 2D components. */
+export function isTwoDimensional(): boolean {
+    return twoDimensional;
+}
+
+/**
+ * Switch between 1D and 2D components.
+ *
+ * Existing components are kept: a 1D lobe becomes the x-marginal of a 2D one,
+ * with its y parameters seeded from the same defaults, so nothing the user
+ * drew is lost when the dimension changes.
+ */
+export function setTwoDimensional(next: boolean): void {
+    if (twoDimensional === next) return;
+    twoDimensional = next;
+
+    if (next) {
+        components = components.map((c) => ({
+            ...c,
+            meanY: c.meanY === 0 ? c.mean : c.meanY,
+            sigmaY: c.sigmaY === c.sigma ? c.sigmaY : c.sigma,
+        }));
+    }
+
+    syncActiveParam(getSelected()?.family ?? currentFamily);
+    notify();
 }
 
 /** Ensure `activeParam` is valid for the given family. */
 function syncActiveParam(family: Family): void {
-    const allowed = FAMILY_PARAMS[family];
+    const allowed = paramsFor(family);
     if (!allowed.includes(activeParam)) {
         activeParam = allowed[0]!;
     }
@@ -190,11 +246,12 @@ export function componentAnchor(c: Component): number {
 }
 
 /** Seed a component's parameters with sensible defaults for its family at `at`. */
-function makeComponent(id: number, family: Family, at: number): Component {
+function makeComponent(id: number, family: Family, at: number, atY = at): Component {
     const { min, max } = domainBounds();
     const width = Math.max(1e-6, max - min);
     const sigma = defaultSigma();
     const clampedAt = Math.max(min, Math.min(max, at));
+    const clampedAtY = Math.max(min, Math.min(max, atY));
 
     // Ensure uniform bounds stay inside [min, max] with non-zero width
     let lower = Math.max(min, clampedAt - sigma);
@@ -216,7 +273,9 @@ function makeComponent(id: number, family: Family, at: number): Component {
         family,
         weight: 1,
         mean: clampedAt,
+        meanY: clampedAtY,
         sigma,
+        sigmaY: sigma,
         lower,
         upper,
         rate,
@@ -229,14 +288,14 @@ function makeComponent(id: number, family: Family, at: number): Component {
 }
 
 /** A detached component of `family` at `at`, used for hover previews. */
-export function makeGhost(family: Family, at: number): Component {
-    return makeComponent(-1, family, at);
+export function makeGhost(family: Family, at: number, atY = at): Component {
+    return makeComponent(-1, family, at, atY);
 }
 
 /** Draw a new lobe of the current family at `mean`. Returns its id. */
-export function addComponent(mean: number, family: Family = currentFamily): number {
+export function addComponent(mean: number, family: Family = currentFamily, meanY = mean): number {
     const id = nextId++;
-    components = [...components, makeComponent(id, family, mean)];
+    components = [...components, makeComponent(id, family, mean, meanY)];
     notify();
     return id;
 }
@@ -336,7 +395,9 @@ export function cycleParam(direction: 1 | -1): void {
 /** Per-parameter nudge steps, as a fraction of the domain for unit-scaled ones. */
 const STEP: Record<ParamKey, number> = {
     mean: 0.02,
+    meanY: 0.02,
     sigma: 0.01,
+    sigmaY: 0.01,
     weight: 0.05,
     lower: 0.02,
     upper: 0.02,
@@ -349,16 +410,16 @@ const STEP: Record<ParamKey, number> = {
 };
 
 /** Parameters measured in domain units, whose steps scale with the domain. */
-const UNIT_SCALED = new Set<ParamKey>(['mean', 'sigma', 'lower', 'upper', 'location', 'scale']);
+const UNIT_SCALED = new Set<ParamKey>(['mean', 'meanY', 'sigma', 'sigmaY', 'lower', 'upper', 'location', 'scale']);
 
 /** Parameters that place a component along the domain's x-axis. */
-const LOCATION_PARAMS = new Set<ParamKey>(['mean', 'lower', 'upper', 'location']);
+const LOCATION_PARAMS = new Set<ParamKey>(['mean', 'meanY', 'lower', 'upper', 'location']);
 
 /**
  * Clamp a parameter to its valid range, taking component constraints into account.
  */
 function clampParam(param: ParamKey, value: number, component?: Component): number {
-    if (param === 'sigma' || param === 'scale') return Math.max(1e-3, value);
+    if (param === 'sigma' || param === 'sigmaY' || param === 'scale') return Math.max(1e-3, value);
     if (param === 'weight' || param === 'rate') return Math.max(1e-3, value);
     if (param === 'alpha' || param === 'beta') return Math.max(1e-2, value);
     if (param === 'kappa') return Math.max(0, value);
@@ -438,17 +499,19 @@ export function setSelectedParam(param: ParamKey, value: number): void {
 }
 
 /**
- * Move a component's horizontal position without notifying listeners.
+ * Move a component's position without notifying listeners.
  *
  * Updates the relevant location parameter(s) for the component's family so
  * dragging works across Gaussian, Cauchy, Uniform, and von Mises components.
+ * In 2D the y coordinate is updated alongside x.
  */
-export function moveComponent(id: number, targetX: number): void {
+export function moveComponent(id: number, targetX: number, targetY?: number): void {
     const index = components.findIndex((c) => c.id === id);
     if (index === -1) return;
     const current = components[index]!;
     const { min, max } = domainBounds();
     const clamped = Math.max(min, Math.min(max, targetX));
+    const clampedY = targetY === undefined ? current.meanY : Math.max(min, Math.min(max, targetY));
 
     const uniform = (): Component | null => {
         const halfWidth = 0.5 * (current.upper - current.lower);
@@ -460,7 +523,7 @@ export function moveComponent(id: number, targetX: number): void {
             return null;
         }
 
-        return { ...current, mean: center, lower, upper };
+        return { ...current, mean: center, meanY: clampedY, lower, upper };
     }
 
     const cauchy = (): Component | null => {
@@ -468,7 +531,7 @@ export function moveComponent(id: number, targetX: number): void {
             return null;
         }
 
-        return { ...current, mean: clamped, location: clamped };
+        return { ...current, mean: clamped, meanY: clampedY, location: clamped };
     }
 
     const beta = (): Component | null => {
@@ -481,7 +544,7 @@ export function moveComponent(id: number, targetX: number): void {
             return null;
         }
 
-        return { ...current, mean: clamped, alpha, beta };
+        return { ...current, mean: clamped, meanY: clampedY, alpha, beta };
     }
 
     const exponential = (): Component | null => {
@@ -493,15 +556,15 @@ export function moveComponent(id: number, targetX: number): void {
             return null;
         }
 
-        return { ...current, mean: clamped, rate };
+        return { ...current, mean: clamped, meanY: clampedY, rate };
     }
 
     const other = (): Component | null => {
-        if (current.mean === clamped) {
+        if (current.mean === clamped && current.meanY === clampedY) {
             return null;
         }
 
-        return { ...current, mean: clamped };
+        return { ...current, mean: clamped, meanY: clampedY };
     }
 
     const handlers: Partial<Record<Component['family'], () => Component | null>> = {
@@ -520,14 +583,14 @@ export function moveComponent(id: number, targetX: number): void {
 }
 
 /**
- * Evaluate the mixture density at `x`.
+ * Evaluate the mixture density at `x` (1D) or at `(x, y)` (2D).
  *
  * Weights are normalised, so the result integrates to 1 over the domain as
  * long as the components do -- which keeps the curve comparable with the fitted
  * density regardless of how many bumps were drawn.
  */
-export function groundTruthPdf(x: number): number {
-    return mixturePdf(components, x);
+export function groundTruthPdf(x: number, y?: number): number {
+    return mixturePdf(components, x, y);
 }
 
 /**
@@ -536,15 +599,65 @@ export function groundTruthPdf(x: number): number {
  * Used to preview the distribution that *would* result from planting a pending
  * lobe, without having to mutate the store first.
  */
-export function mixturePdf(list: Component[], x: number): number {
+export function mixturePdf(list: Component[], x: number, y?: number): number {
     if (list.length === 0) return 0;
     const totalWeight = list.reduce((sum, c) => sum + c.weight, 0);
     if (totalWeight <= 0) return 0;
     let density = 0;
     for (const c of list) {
-        density += (c.weight / totalWeight) * componentPdf(c, x);
+        density += (c.weight / totalWeight) * (y === undefined ? componentPdf(c, x) : componentPdf2D(c, x, y));
     }
     return density;
+}
+
+/**
+ * Evaluate a single component's 2D density at `(x, y)`.
+ *
+ * Components are separable: the shape along x is the same 1D density, and the
+ * shape along y is that density with the `*Y` parameters substituted. The
+ * product is therefore a valid 2D density whose marginals are the 1D shapes.
+ */
+export function componentPdf2D(component: Component, x: number, y: number): number {
+    const alongX = componentPdf(component, x);
+    if (alongX === 0) return 0;
+
+    switch (component.family) {
+        case 'gaussian': {
+            const sigmaY = Math.max(1e-3, component.sigmaY);
+            const z = (y - component.meanY) / sigmaY;
+            return alongX * (Math.exp(-0.5 * z * z) / (sigmaY * Math.sqrt(2 * Math.PI)));
+        }
+        case 'uniform': {
+            // A uniform 2D component is a box over [lower, upper]².
+            const lo = Math.min(component.lower, component.upper);
+            const hi = Math.max(component.lower, component.upper);
+            const width = hi - lo;
+            if (width <= 0) return 0;
+            return y >= lo && y <= hi ? alongX / width : 0;
+        }
+        case 'exponential': {
+            const rate = Math.max(1e-6, component.rate);
+            return y >= 0 ? alongX * rate * Math.exp(-rate * y) : 0;
+        }
+        case 'beta': {
+            // The Beta's support is the unit square, so both axes share the shape.
+            return alongX * componentPdf(component, y);
+        }
+        case 'cauchy': {
+            const scale = Math.max(1e-3, component.scale);
+            const z = (y - component.location) / scale;
+            return alongX * (1 / (Math.PI * scale * (1 + z * z)));
+        }
+        case 'vonmises': {
+            const kappa = Math.max(0, component.kappa);
+            return (
+                alongX *
+                (Math.exp(kappa * (Math.cos(y - component.meanY) - 1)) / (2 * Math.PI * besselI0Scaled(kappa)))
+            );
+        }
+        default:
+            return 0;
+    }
 }
 
 /**
